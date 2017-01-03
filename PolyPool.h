@@ -1,19 +1,23 @@
 #pragma once
 
-/** Require PolyPool to register types by setting their block sizes
-    prior to adding any items. An exception will be raised if an
-    attempt is made to add an item whose type has not been registered.
+/** Require PolyPool to register types by setting their default block
+    sizes prior to adding any items. An exception will be raised if an
+    attempt is made to add an item whose default block size has not
+    been set. This is useful to ensure all types have manually tweaked
+    optimal block sizes.
  */
-#define POLYPOOL_REQUIRE_REGISTRATION
+//#define POLYPOOL_REQUIRE_REGISTRATION
 
-/** If exceptions are not enabled then most errors will go unchecked.
-    It is suggested not to disable exceptions in debug builds.
- */
-#define POLYPOOL_ENABLE_EXCEPTIONS
+// /** If exceptions are not enabled then most errors will go unchecked.
+//     It is suggested not to disable exceptions in debug builds.
+//     TODO: Currently unused, consider removing.
+//  */
+// #define POLYPOOL_ENABLE_EXCEPTIONS
 
-#include "PolyPool.h"
+#include "PolyPoolIterator.h"
 
 #include <cstddef>
+#include <stdexcept>
 #include <typeinfo>
 #include <unordered_map>
 #include <unordered_set>
@@ -21,35 +25,62 @@
 
 #include "boost/poly_collection/base_collection.hpp"
 
-/** Polymorphic object pool.
+/** Polymorphic object pool written in C++11 using RTTI.
 
-    The goal of a object pool is to:
-    * allow fast object creation and deletion
-    * avoid memory fragmentation and improve cache coherency by using
+    Typical goals of an object pool are:
+    * fast object creation and deletion
+    * reduced memory fragmentation and improved cache coherency by using
       contiguous memory chunks
-    * allow object reuse for expensive objects (e.g., network objects)
+    * reuse of expensive objects (e.g., network objects)
 
-    The main downsides of an object pool is:
-    * no index-based element access (use refs, pointers or iterators)
-    * possible wasted space due to fixed-size chunks
-    * extra memory needed to track free elements
-    * size must be optimized for application
+    The main downsides of an object pool are:
+    * no index-based element access (must use refs, pointers or iterators)
+    * possible wasted space due to fixed-size chunks and unused free objects
+    * extra memory needed to track free objects
+    * for optimal performance, block size must be set for each type
+      based on application usage
 
-    Types are registered the first time a block size is set or object
-    is created.
+    Types are registered the first time a default block size is set or
+    object is added to the pool.
+
+    All types stored must be children of the root type or the root
+    type itself.
 
     OPTIMIZE: Consider using boost::unordered_set & boost::unordered_map.
     See: https://tinodidriksen.com/2012/02/cpp-set-performance-2/
+
+    OPTIMIZE: Consider creating simpler alternative to
+    boost::poly_collection if duplicating its type registry and
+    working around its quirks proves inefficient.
  */
 template <typename Root>
 class PolyPool
 {
 public:
+    // using enable_if_subtype=
+    //     typename std::enable_if<is_subtype<Root>::value>::type*;
+
+    // template<typename T,typename Model,typename=void>
+    // struct is_acceptable:std::integral_constant<
+    //     bool,
+    //     Model::template is_subtype<T>::value&&
+    //     std::is_move_constructible<typename std::decay<T>::type>::value&&
+    //     (std::is_move_assignable<typename std::decay<T>::type>::value||
+    //      std::is_nothrow_move_constructible<typename std::decay<T>::type>::value)
+    //     >{};
+    // template<typename T>
+    // using enable_if_acceptable=
+    //     typename std::enable_if<is_acceptable<Root>::value>::type*;
+
+    using base_collection_iterator=
+        typename boost::base_collection<Root>::iterator;
+    using block_list_iterator=
+        typename std::vector<boost::base_collection<Root> >::iterator;
     using size_type=std::size_t;
 
     PolyPool()
     {
-        mContainers.emplace();
+        mBlocks.emplace_back();
     }
 
     PolyPool(size_type defaultBlockSize)
@@ -63,49 +94,39 @@ public:
     }
 #endif
 
-    template <typename Child, typename... Args, enable_if_acceptable<Child> = nullptr>
-    Child* emplace(Args&&... args)
+    // template <typename Child, enable_if_acceptable<Child> = nullptr>
+    template <typename Child>
+    Child* insert(Child&& child)
     {
-        auto& freeItems = mFreeItems[typeid(Child)];
-        if (not freeItems.empty())
+        Child* freeItem = popFreeItem<Child>();
+        if (freeItem)
         {
-            auto iter = freeItems.begin();
-            Child* item = *iter;
-            freeItems.erase(iter);
-            item->Child(args);
-            return item;
+            *freeItem = child;
+            return freeItem;
         }
         else
         {
-            auto& lastBlock = mLastBlock[typeid(Child)];
-            if (lastBlock->size<Child>() == lastBlock->capacity<Child>())
-            {
-                if (lastBlock == mContainers.end() - 1)
-                {
-                    // Create new block.
-                    mContainers.push_back();
-                    lastBlock = mContainers.end() - 1;
-#ifndef POLYPOOL_REQUIRE_REGISTRATION
-                    if (mBlockSize.count(typeid(Child)) == 0)
-                    {
-                        mBlockSize[typeid(Child)] = mDefaultBlockSize;
-                    }
-#elif defined POLYPOOL_ENABLE_EXCEPTIONS
-                    if (mBlockSize.count(typeid(Child)) == 0)
-                    {
-                        throw Exception("Cannot add unregistered type to PolyPool while POLYPOOL_REQUIRE_REGISTRATION is enabled.");
-                    }
-#endif
-                }
-                else
-                {
-                    // Move to next block.
-                    lastBlock++;
-                }
-                lastBlock->reserve<Child>(mBlockSize[typeid(Child)]);
-            }
-            auto iter = lastBlock->emplace<Child>(args);
-            return &(*iter);
+            block_list_iterator block = getBlockForNewItem<Child>();
+            auto iter = block->insert(std::forward<Child>(child));
+            return (Child*)(&(*iter));
+        }
+    }
+    
+    // template <typename Child, typename... Args, enable_if_acceptable<Child> = nullptr>
+    template <typename Child, typename... Args>
+    Child* emplace(Args&&... args)
+    {
+        Child* freeItem = popFreeItem<Child>();
+        if (freeItem)
+        {
+            *freeItem = Child(args...);
+            return freeItem;
+        }
+        else
+        {
+            block_list_iterator block = getBlockForNewItem<Child>();
+            auto iter = block->emplace<Child>(args...);
+            return (Child*)(&(*iter));
         }
     }
 
@@ -113,32 +134,127 @@ public:
         later reuse by the pool.
     */
     template <typename Child>
-    void destroy(Child*& item)
+    // void destroy(Child*& item)
+    void destroy(Child* item)
     {
         item->~Child();
-        mFreeItems[typeid(Child)].insert(item)
+        mFreeItems[typeid(Child)].insert(item);
+        // item = nullptr;
         item = nullptr;
     }
+
+    bool empty()
+    {
+        for (auto& block : mBlocks)
+        {
+            if (not block.empty()) return false;
+        }
+        return true;
+    }
+    template <typename Child>
+    bool empty()
+    {
+        for (auto block = mBlocks.begin(); block <= mLastBlock[typeid(Child)]; block++)
+        {
+            if (not block->empty<Child>()) return false;
+        }
+        return true;
+    }
+
+    /// Number of active items.
+    size_type active()
+    {
+        return size() - holes();
+    }
+    template <typename Child>
+    size_type active()
+    {
+        return size<Child>() - holes<Child>();
+    }
+
+    /// Number of free items.
+    size_type holes()
+    {
+        size_type size = 0;
+        for (auto& freeItems : mFreeItems)
+        {
+            size += freeItems.second.size();
+        }
+        return size;
+    }
+    template <typename Child>
+    size_type holes()
+    {
+        return mFreeItems[typeid(Child)].size();
+    }
+
+    ///TODO: Number of active + free items.
+    size_type size()
+    {
+        size_type size = 0;
+        for (auto& block : mBlocks)
+        {
+            size += block.size();
+        }
+        return size;
+    }
+    template <typename Child>
+    size_type size()
+    {
+        size_type size = 0;
+        for (auto block = mBlocks.begin(); block <= mLastBlock[typeid(Child)]; block++)
+        {
+            size += block->template size<Child>();
+        }
+        return size;
+    }
+
+    /// Total number of items, active + free + spare.
+    size_type capacity()
+    {
+        size_type size = 0;
+        for (auto& block : mBlocks)
+        {
+            size += block.capacity();
+        }
+        return size;
+    }
+    template <typename Child>
+    size_type capacity()
+    {
+        size_type size = 0;
+        for (auto block = mBlocks.begin(); block <= mLastBlock[typeid(Child)]; block++)
+        {
+            size += block->template capacity<Child>();
+        }
+        return size;
+    }
+
+    ///TODO: Number of blocks.
+    /// size_type blocks()
+
+    //todo: size_type max_size()
 
     /** Set the block size for a type and apply to existing blocks.
         Does not cause rellocation of existing blocks.
      */
-    template <typename Child>
-    void setBlockSize(size_type size)
-    {
-        setDefaultBlockSize<Child>(size);
-        for (auto& container : mContainers)
-        {
-            container.reserve<Child>(size);
-        }
-    }
+    // template <typename Child>
+    // void setBlockSize(size_type size)
+    // {
+    //     setDefaultBlockSize<Child>(size);
+    //     for (auto& container : mBlocks)
+    //     {
+    //         container.reserve(typeid(Child), size);
+    //     }
+    // }
     /** Set the default block size for newly created blocks.
         No-op if POLYPOOL_REQUIRE_REGISTRATION is enabled.
      */
     template <typename Child>
     void setDefaultBlockSize(size_type size)
     {
-        mBlockSize[typeid(Child)] = numItems;
+        mBlockSize[typeid(Child)] = size;
+        registerType<Child>();
     }
     void setDefaultBlockSize(size_type size)
     {
@@ -151,13 +267,13 @@ public:
 
     void clear()
     {
-        mContainers.clear();
+        mBlocks.clear();
         mFreeItems.clear();
     }
     template <typename Child>
     void clear()
     {
-        for (auto& container : mContainers)
+        for (auto& container : mBlocks)
         {
             container.clear<Child>();
         }
@@ -166,19 +282,22 @@ public:
 
     PolyPoolIterator<Root> begin()
     {
-        auto iter = mContainers[0].begin();
-        return PolyPoolIterator<Root>(iter);
+        base_collection_iterator begin = mBlocks[0].begin();
+        return PolyPoolIterator<Root>(
+            begin, mBlocks.begin(), mBlocks, mFreeItems);
     }
     PolyPoolIterator<Root> end()
     {
-
+        base_collection_iterator sentinel = mBlocks.end()->end();
+        return PolyPoolIterator<Root>(
+            sentinel, mBlocks.end() - 1, mBlocks, mFreeItems);
     }
 
 #if 0
     template <typename Child>
     PolyPoolLocalIterator<Child> begin()
     {
-        auto iter = mContainers[0].begin<Child>();
+        auto iter = mBlocks[0].begin<Child>();
         return PolyPoolLocalIterator<Root, Child>(iter);
     }
     template <typename Child>
@@ -245,21 +364,95 @@ public:
     }
 
 protected:
-    /// The underlying polymorphic containers.
-    std::vector<boost::base_collection<Root> > mContainers;
-    // std::unordered_map<std::type_index, std::unique_ptr<PolyPoolSegment> > mContainers;
+    /// The underlying polymorphic block containers.
+    std::vector<boost::base_collection<Root> > mBlocks;
+    // std::unordered_map<std::type_index, std::unique_ptr<PolyPoolSegment> > mBlocks;
 
     /// The size of each block per type.
     std::unordered_map<std::type_index, size_type> mBlockSize;
     /// The current block being filled for a specific type.
-    std::unordered_map<std::type_index, std::vector<boost::base_collection<Root> >::iterator > mLastBlock;
+    std::unordered_map<std::type_index, block_list_iterator> mLastBlock;
     /// Tracks free items of every type.
     std::unordered_map<std::type_index, std::unordered_set<Root*> > mFreeItems;
 
 #ifndef POLYPOOL_REQUIRE_REGISTRATION
     /// Default block size used for unregistered types.
-    size_type mDefaultBlockSize = 0;
+    size_type mDefaultBlockSize = 20;
 #endif
+
+    template <typename Child>
+    Child* popFreeItem()
+    {
+        auto& freeItems = mFreeItems[typeid(Child)];
+        if (not freeItems.empty())
+        {
+            auto iter = freeItems.begin();
+            Child* item = (Child*)(*iter);
+            freeItems.erase(iter);
+            return item;
+        }
+        else
+        {
+            return nullptr;
+        }
+    }
+
+    /** Get a block with room for a new item.
+        May create a block if all current blocks are occupied.
+     */
+    template <typename Child>
+    block_list_iterator getBlockForNewItem()
+    {
+        const std::type_info& childID = typeid(Child);
+#ifdef POLYPOOL_REQUIRE_REGISTRATION
+        if (mLastBlock.count(childID) == 0)
+        {
+            throw std::logic_error("Cannot add unregistered type to PolyPool while POLYPOOL_REQUIRE_REGISTRATION is enabled.");
+        }
+#else
+        registerType<Child>(mDefaultBlockSize);
+#endif
+        auto& lastBlock = mLastBlock[childID];
+        if (lastBlock->size(childID) == lastBlock->capacity(childID))
+        {
+            if (lastBlock == mBlocks.end() - 1)
+            {
+                // Create new block.
+                mBlocks.emplace_back();
+                lastBlock = mBlocks.end() - 1;
+            }
+            else
+            {
+                // Move to next block.
+                lastBlock++;
+            }
+            lastBlock->template reserve<Child>(mBlockSize[childID]);
+        }
+        return lastBlock;
+    }
+
+    template <typename Type>
+    void registerType(const size_type& blockSize)
+    {
+        const std::type_info& type = typeid(Type);
+        if (mLastBlock.count(type) == 0)
+        {
+            mLastBlock[type] = mBlocks.begin();
+            mBlockSize[type] = blockSize;
+            mLastBlock[type]->template reserve<Type>(mBlockSize[type]);
+        }
+    }
+    template <typename Type>
+    void registerType()
+    {
+        const std::type_info& type = typeid(Type);
+        if (mLastBlock.count(type) == 0)
+        {
+            // Register type.
+            mLastBlock[type] = mBlocks.begin();
+            mLastBlock[type]->template reserve<Type>(mBlockSize[type]);
+        }
+    }
 
 private:
 };

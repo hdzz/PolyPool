@@ -1,3 +1,4 @@
+#if 0
 #pragma once
 
 #include <memory>
@@ -12,3 +13,4 @@ struct PolyPoolVectorSegment : public PolyPoolSegment
 {
     std::vector<T> buffer;
 };
+#endif
