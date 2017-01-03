@@ -1,0 +1,18 @@
+PolyPool is a polymorphic object pool written in C++11.
+
+Under the hood it relies on RTTI and stores objects using boost
+candidate library boost::poly_collection.
+
+It is a header only library, so nothing to compile. Just #include
+"PolyPool.h" and you are good to go.
+
+This project is still in its early stages. Expect frequent interface
+changes and bugs.
+
+* TODO: Rationale
+* TODO
+** [#A] finish PolyPoolLocalIterator
+** [#B] create performance tests
+** [#B] create correctness tests
+** [#B] seek STL container & iterator compliance
+** [#C] flesh out README
