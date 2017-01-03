@@ -15,7 +15,7 @@
     OPTIMIZE: May be faster to keep list of used items?
  */
 template <typename ValueType>
-class PolyPoolIterator : public std::iterator<std::bidirectional_iterator_tag, ValueType>
+class PolyPoolIterator : public std::iterator<std::forward_iterator_tag, ValueType>
 {
     template <typename>
     friend class PolyPoolIterator;
@@ -51,7 +51,7 @@ public:
             if (mIter == mCurrentBlock->end()
                 and mCurrentBlock != mBlocks.end())
             {
-                mCurrentBlock++;
+                ++mCurrentBlock;
                 mIter = mCurrentBlock->begin();
             }
         } while (mIter != mBlocks.back().end()
@@ -60,16 +60,27 @@ public:
         return *this;
     }
 
-    // PolyPoolIterator<ValueType>& operator--()
-    // {
-    //     // Seek previous non-free element.
-    //     do
-    //     {
-    //         --mIter;
-    //     } while (mIter != mBlocks[0].begin()
-    //              and mFreeItems[typeid(*mIter)].count(&(*mIter)));
-    //     return *this;
-    // }
+#if 0
+    PolyPoolIterator<ValueType>& operator--()
+    {
+        // Seek previous non-free element.
+        do
+        {
+            //FIXME: poly_collection::iterator does not seem to support reverse.
+            --mIter;
+
+            // Move to previous block.
+            if (mIter == mCurrentBlock->begin()
+                and mCurrentBlock != mBlocks.begin())
+            {
+                --mCurrentBlock;
+                mIter = mCurrentBlock->end();
+            }
+        } while (mIter != mBlocks.begin().begin()
+                 and mFreeItems[typeid(*mIter)].count(&(*mIter)));
+        return *this;
+    }
+#endif
 
     //TODO: prefix operators
     // PolyPoolIterator<ValueType> operator++(ValueType)
@@ -97,7 +108,10 @@ public:
         return *mIter;
     }
 
-    //TODO: operator->
+    ValueType* operator->()
+    {
+        return &(*mIter);
+    }
 
 protected:
     PolyPoolIterator(base_collection_iterator& iter,
@@ -119,7 +133,7 @@ private:
 /** A segment iterator.
  */
 template <typename BaseType, typename ValueType>
-class PolyPoolLocalIterator : public std::iterator<std::bidirectional_iterator_tag, ValueType>
+class PolyPoolLocalIterator : public std::iterator<std::forward_iterator_tag, ValueType>
 {
     boost::base_collection<BaseType>::local_iterator<ValueType> mIter;
     std::unordered_set<ValueType*>& mFreeItems;

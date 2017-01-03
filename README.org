@@ -10,9 +10,10 @@ This project is still in its early stages. Expect frequent interface
 changes and bugs.
 
 * TODO: Rationale
-* TODO
+* TODO:
 ** [#A] finish PolyPoolLocalIterator
 ** [#B] create performance tests
 ** [#B] create correctness tests
 ** [#B] seek STL container & iterator compliance
 ** [#C] flesh out README
+** [#C] make iterators bidirectional

@@ -22,10 +22,16 @@ struct C : public A
     virtual void say() { std::cout << "Ceee Senor " << name << std::endl; }
 };
 
+template <typename Child, typename Root>
+void printPoolStats(PolyPool<Root>& pool)
+{
+    std::cout << pool.template size<Child>() << " " << pool.template holes<Child>() << std::endl;
+}
+
 int main()
 {
     PolyPool<A> pool;
-    pool.setDefaultBlockSize(10);
+    pool.setDefaultBlockSize(3);
     // pool.setDefaultBlockSize<B>(10);
     // pool.setDefaultBlockSize<C>(10);
     for (int i = 0; i < 20; i++) pool.emplace<B>();
@@ -37,14 +43,29 @@ int main()
     pool.destroy(moo);
     pool.emplace<C>("Doo");
     pool.destroy(boo);
+#if 1
     for (auto& item : pool)
     {
         item.say();
-        pool.destroy(&item);
+        // pool.destroy(&item);
     }
+#else
+    for (auto item = pool.begin(); item != pool.end(); ++item)
+    {
+        item->say();
+    }
+#endif
     C* hoo = pool.insert(C("HOOOOO"));
-    std::cout << pool.size<B>() << " " << pool.holes<B>() << std::endl;
-    std::cout << pool.size<C>() << " " << pool.holes<C>() << std::endl;
+    printPoolStats<B>(pool);
+    printPoolStats<C>(pool);
     hoo->say();
+    pool.nullify(hoo);
+    if (not hoo) std::cout << "No hoo... =D" << std::endl;
+    // pool.clear<C>();
+    printPoolStats<B>(pool);
+    printPoolStats<C>(pool);
+    pool.clear();
+    printPoolStats<B>(pool);
+    printPoolStats<C>(pool);
     return 0;
 }

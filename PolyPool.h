@@ -130,16 +130,38 @@ public:
         }
     }
 
-    /** Call object destructor and add it to free object list for
-        later reuse by the pool.
-    */
+    /** Add object to free object list.
+
+        The object destructor is not called. To both destruct and free
+        an object, see destroy().
+     */
     template <typename Child>
-    // void destroy(Child*& item)
+    void free(Child* item)
+    {
+        mFreeItems[typeid(Child)].insert(item);
+    }
+    /** Call object destructor and add it to free object list.
+
+        The object should no longer be accessible after it is
+        destroyed.
+
+        It is good practice to set lingering pointers to this object
+        to nullptr. To have this done for you along with destruction,
+        see nullify().
+     */
+    template <typename Child>
     void destroy(Child* item)
     {
         item->~Child();
-        mFreeItems[typeid(Child)].insert(item);
-        // item = nullptr;
+        free(item);
+    }
+    /** Destroy object and set its pointer to nullptr.
+        See destroy() for notes.
+     */
+    template <typename Child>
+    void nullify(Child*& item)
+    {
+        destroy(item);
         item = nullptr;
     }
 
@@ -188,7 +210,7 @@ public:
         return mFreeItems[typeid(Child)].size();
     }
 
-    ///TODO: Number of active + free items.
+    /// Number of active + free items.
     size_type size()
     {
         size_type size = 0;
@@ -265,19 +287,36 @@ public:
 #endif
     }
 
+    /** Destruct all objects in container and unregister all types.
+        May not deallocate memory depending on std::vector
+        implementation.
+     */
     void clear()
     {
+        //FIXME: This may call destruction on already destroyed free objects.
         mBlocks.clear();
         mFreeItems.clear();
+        mLastBlock.clear();
+        mBlockSize.clear();
     }
+    /** Destruct all objects of given type in container and unregister
+        the type.
+        May not deallocate memory depending on std::vector
+        implementation.
+     */
     template <typename Child>
     void clear()
     {
-        for (auto& container : mBlocks)
+        const auto& childID = typeid(Child);
+        for (auto block = mBlocks.begin();
+             block <= mLastBlock[childID]; block++)
         {
-            container.clear<Child>();
+            //FIXME: This may call destruction on already destroyed free objects.
+            block->clear<Child>();
         }
-        mFreeItems[typeid(Child)];
+        mFreeItems.erase(childID);
+        mLastBlock.erase(childID);
+        mBlockSize.erase(childID);
     }
 
     PolyPoolIterator<Root> begin()
