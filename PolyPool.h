@@ -349,6 +349,30 @@ public:
             sentinel, lastBlock, lastBlock, mBlocks, mFreeItems[typeid(Child)]);
     }
 
+
+    // For range loops of local iterators.
+    template <typename Child>
+    struct Local
+    {
+        PolyPool<Root>* pool;
+        Local(PolyPool<Root>* poolIn) : pool(poolIn) {}
+
+        PolyPoolLocalIterator<Child, Root> begin()
+        {
+            return pool->template begin<Child>();
+        }
+        PolyPoolLocalIterator<Child, Root> end()
+        {
+            return pool->template end<Child>();
+        }
+    };
+
+    template <typename Child>
+    Local<Child> local()
+    {
+        return Local<Child>(this);
+    }
+
     /** TODO: Deallocate empty blocks from the last non-empty block to
         the end of the block list.
 

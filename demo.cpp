@@ -61,8 +61,12 @@ int main()
     hoo->say();
     pool.nullify(hoo);
     if (not hoo) std::cout << "No hoo... =D" << std::endl;
-#if 0
+#if 1
     //TODO: auto support for local iterators
+    for (auto c : pool.local<C>())
+    {
+        c.say();
+    }
 #else
     for (auto c = pool.begin<C>(); c != pool.end<C>(); ++c)
     {
