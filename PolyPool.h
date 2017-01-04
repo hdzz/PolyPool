@@ -332,20 +332,22 @@ public:
             sentinel, mBlocks.end() - 1, mBlocks, mFreeItems);
     }
 
-#if 0
     template <typename Child>
-    PolyPoolLocalIterator<Child> begin()
+    PolyPoolLocalIterator<Child, Root> begin()
     {
-        auto iter = mBlocks[0].begin<Child>();
-        return PolyPoolLocalIterator<Root, Child>(iter);
+        auto& lastBlock = mLastBlock[typeid(Child)];
+        auto begin = mBlocks[0].template begin<Child>();
+        return PolyPoolLocalIterator<Child, Root>(
+            begin, mBlocks.begin(), lastBlock, mBlocks, mFreeItems[typeid(Child)]);
     }
     template <typename Child>
-    PolyPoolLocalIterator<Child> end()
+    PolyPoolLocalIterator<Child, Root> end()
     {
-        auto iter = mLastBlock[typeid(Child)]->end<Child>();
-        return PolyPoolLocalIterator<Root, Child>(iter);
+        auto& lastBlock = mLastBlock[typeid(Child)];
+        auto sentinel = lastBlock->template end<Child>();
+        return PolyPoolLocalIterator<Child, Root>(
+            sentinel, lastBlock, lastBlock, mBlocks, mFreeItems[typeid(Child)]);
     }
-#endif
 
     /** TODO: Deallocate empty blocks from the last non-empty block to
         the end of the block list.

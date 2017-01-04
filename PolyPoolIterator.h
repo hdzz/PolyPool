@@ -13,19 +13,23 @@
     See PolyPoolLocalIterator to iterate a single sub-type.
 
     OPTIMIZE: May be faster to keep list of used items?
+
+    TODO: Change ValueType -> Root.
  */
-template <typename ValueType>
-class PolyPoolIterator : public std::iterator<std::forward_iterator_tag, ValueType>
+template <typename Root>
+class PolyPoolIterator : public std::iterator<std::forward_iterator_tag, Root>
 {
     template <typename>
     friend class PolyPoolIterator;
     template<typename>
     friend class PolyPool;
 
-    using base_collection_iterator=typename boost::base_collection<ValueType>::iterator;
-    using block_list=std::vector<boost::base_collection<ValueType> >;
-    using block_list_iterator=typename std::vector<boost::base_collection<ValueType> >::iterator;
-    using free_items_map=std::unordered_map<std::type_index, std::unordered_set<ValueType*> >;
+    using iterator=PolyPoolIterator<Root>;
+
+    using base_collection_iterator=typename boost::base_collection<Root>::iterator;
+    using block_list=std::vector<boost::base_collection<Root> >;
+    using block_list_iterator=typename std::vector<boost::base_collection<Root> >::iterator;
+    using free_items_map=std::unordered_map<std::type_index, std::unordered_set<Root*> >;
 
     base_collection_iterator mIter;
     block_list_iterator mCurrentBlock;
@@ -39,7 +43,7 @@ public:
     // {
     // }
 
-    PolyPoolIterator<ValueType>& operator++()
+    iterator& operator++()
     {
         // Seek next non-free element, jumping from block to block as
         // needed.
@@ -61,7 +65,7 @@ public:
     }
 
 #if 0
-    PolyPoolIterator<ValueType>& operator--()
+    iterator& operator--()
     {
         // Seek previous non-free element.
         do
@@ -83,32 +87,32 @@ public:
 #endif
 
     //TODO: prefix operators
-    // PolyPoolIterator<ValueType> operator++(ValueType)
+    // PolyPoolIterator<Root> operator++(Root)
     // {
-    //     PolyPoolIterator<ValueType> tmp(*this);
+    //     PolyPoolIterator<Root> tmp(*this);
     //     operator++();
     //     return tmp;
     // }
-    // PolyPoolIterator<ValueType> operator--(???)
+    // PolyPoolIterator<Root> operator--(???)
     // {
     // }
 
-    bool operator==(const PolyPoolIterator<ValueType>& rhs)
+    bool operator==(const iterator& rhs)
     {
         return mIter == rhs.mIter;
     }
 
-    bool operator!=(const PolyPoolIterator<ValueType>& rhs)
+    bool operator!=(const iterator& rhs)
     {
         return mIter != rhs.mIter;
     }
 
-    ValueType& operator*()
+    Root& operator*()
     {
         return *mIter;
     }
 
-    ValueType* operator->()
+    Root* operator->()
     {
         return &(*mIter);
     }
@@ -129,23 +133,88 @@ private:
 };
 
 
-#if 0
-/** A segment iterator.
+/** A type-specific iterator.
  */
-template <typename BaseType, typename ValueType>
-class PolyPoolLocalIterator : public std::iterator<std::forward_iterator_tag, ValueType>
+template <typename Child, typename Root>
+class PolyPoolLocalIterator : public std::iterator<std::forward_iterator_tag, Root>
 {
-    boost::base_collection<BaseType>::local_iterator<ValueType> mIter;
-    std::unordered_set<ValueType*>& mFreeItems;
+    template <typename,typename>
+    friend class PolyPoolLocalIterator;
+    template<typename>
+    friend class PolyPool;
+
+    using local_iterator=PolyPoolLocalIterator<Child, Root>;
+
+    using base_collection_local_iterator=typename boost::base_collection<Root>::template local_iterator<Child>;
+    using block_list=std::vector<boost::base_collection<Root> >;
+    using block_list_iterator=typename std::vector<boost::base_collection<Root> >::iterator;
+    using free_items=std::unordered_set<Root*>;
+
+    base_collection_local_iterator mIter;
+    block_list_iterator mCurrentBlock;
+    block_list_iterator& mLastBlock;
+    block_list& mBlocks; //TODO: May not need this for local iters.
+    free_items& mFreeItems;
 
 public:
-    PolyPoolLocalIterator(
-        boost::base_collection<BaseType>::local_iterator<ValueType> iter,
-        std::unordered_set<ValueType*>& freeItems)
+    local_iterator& operator++()
+    {
+        // Seek next non-free element, jumping from block to block as
+        // needed.
+        do
+        {
+            ++mIter;
+
+            // Advance to next block.
+            if (mIter == mCurrentBlock->template end<Child>()
+                and mCurrentBlock != mLastBlock)
+            {
+                ++mCurrentBlock;
+                mIter = mCurrentBlock->template begin<Child>();
+            }
+        } while (mIter != mLastBlock->template end<Child>()
+                 and mFreeItems.count(&(*mIter)));
+
+        return *this;
+    }
+
+    //TODO: reverse operator
+    //TODO: prefix operators
+
+    bool operator==(const local_iterator& rhs)
+    {
+        return mIter == rhs.mIter;
+    }
+
+    bool operator!=(const local_iterator& rhs)
+    {
+        return mIter != rhs.mIter;
+    }
+
+    Child& operator*()
+    {
+        return *mIter;
+    }
+
+    Child* operator->()
+    {
+        return &(*mIter);
+    }
+
+protected:
+    PolyPoolLocalIterator(base_collection_local_iterator& iter,
+                          block_list_iterator currentBlock,
+                          block_list_iterator& lastBlock,
+                          block_list& blocks,
+                          free_items& freeItems)
         : mIter(iter)
+        , mCurrentBlock(currentBlock)
+        , mLastBlock(lastBlock)
+        , mBlocks(blocks)
         , mFreeItems(freeItems)
     {
 
     }
+
+private:
 };
-#endif
