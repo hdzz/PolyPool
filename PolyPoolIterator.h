@@ -53,7 +53,7 @@ public:
 
             // Advance to next block.
             if (mIter == mCurrentBlock->end()
-                and mCurrentBlock != mBlocks.end())
+                and mCurrentBlock != mBlocks.end() - 1)
             {
                 ++mCurrentBlock;
                 mIter = mCurrentBlock->begin();
