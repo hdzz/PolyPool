@@ -287,6 +287,30 @@ public:
 #endif
     }
 
+    /** Destruct and free all objects in container without
+        deallocating memory.
+     */
+    void freeAll()
+    {
+        for (auto& item : *this)
+        {
+            destroy(&item);
+        }
+        for (auto& lastBlock : mLastBlock)
+        {
+            lastBlock = mBlocks.begin();
+        }
+    }
+    template <typename Child>
+    void freeAll()
+    {
+        for (auto& item : local<Child>())
+        {
+            destroy(&item);
+        }
+        mLastBlock[typeid(Child)] = mBlocks.begin();
+    }
+
     /** Destruct all objects in container and unregister all types.
         May not deallocate memory depending on std::vector
         implementation.
